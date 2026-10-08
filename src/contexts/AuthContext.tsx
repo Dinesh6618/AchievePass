@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { AppError, reportError } from '@/lib/errors'
@@ -13,22 +13,29 @@ interface AuthContextValue {
   loading: boolean
   /** Set when a session exists but the account can't be used (deactivated, missing profile). */
   accountError: string | null
-  /** True after following a password-reset email link. */
-  recoveryMode: boolean
-  /** Faculty / admin sign-in (e-mail + password). */
-  signIn: (email: string, password: string) => Promise<Profile>
-  /** Student sign-in (username + password). */
-  signInWithUsername: (username: string, password: string) => Promise<Profile>
+  /** Forget the last sign-in problem (e.g. when the visitor picks a different account type). */
+  clearAccountError: () => void
+  /**
+   * Username + password sign-in for every role. `expectedRole` is the account type chosen on the login page; an account
+   * of a different type is signed straight back out with an explanation (the role itself always comes from the database).
+   */
+  signInWithUsername: (username: string, password: string, expectedRole?: Role) => Promise<Profile>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   setProfile: (profile: Profile) => void
-  clearRecoveryMode: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function homePathFor(role: Role): string {
   return role === 'student' ? '/student' : role === 'faculty' ? '/faculty' : '/admin'
+}
+
+const ROLE_LABEL: Record<Role, string> = { student: 'Student', faculty: 'Faculty', admin: 'Admin' }
+
+/** Said after correct credentials were entered on the wrong account-type tab. */
+export function wrongAccountTypeMessage(actual: Role, expected: Role): string {
+  return `That is a ${ROLE_LABEL[actual]} account, not a ${ROLE_LABEL[expected]} one. Choose “${ROLE_LABEL[actual]}” above and sign in again.`
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -39,7 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // session's user we are still "loading" — otherwise a restored session would flash as signed out.
   const [profileFor, setProfileFor] = useState<string | null>(null)
   const [accountError, setAccountError] = useState<string | null>(null)
-  const [recoveryMode, setRecoveryMode] = useState(false)
+  // The account type picked on the login page while a sign-in is in flight (null otherwise).
+  const expectedRole = useRef<Role | null>(null)
+  // True while signInWithUsername runs: it loads and checks the profile itself, so the restore effect below must not
+  // race it (a second, late lookup could wipe the "wrong account type" message or let the wrong account in).
+  const signingIn = useRef(false)
 
   // 1) Restore the persisted session and follow auth changes.
   useEffect(() => {
@@ -59,11 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data } = supabase.auth.onAuthStateChange((event, next) => {
       // Never await Supabase calls in here (it can deadlock the auth client); just record state.
       setSession(next)
-      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true)
-      if (event === 'SIGNED_OUT') {
-        setProfileState(null)
-        setRecoveryMode(false)
-      }
+      if (event === 'SIGNED_OUT') setProfileState(null)
     })
     return () => {
       active = false
@@ -79,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileFor(null)
       return
     }
+    if (signingIn.current) return
     let active = true
     fetchProfile(userId)
       .then(async (p) => {
@@ -88,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfileState(null)
           await supabase.auth.signOut()
         } else if (!p.is_active) {
-          setAccountError('This account has been deactivated. Please contact your administrator.')
+          setAccountError('This account has been disabled. Please contact your administrator.')
           setProfileState(null)
           await supabase.auth.signOut()
         } else {
@@ -118,31 +126,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const p = await fetchProfile(userIdValue)
     if (!p) return reject('We could not find a profile for this account. Please contact your administrator.')
-    if (!p.is_active) return reject('This account has been deactivated. Please contact your administrator.')
+    if (!p.is_active) return reject('This account has been disabled. Please contact your administrator.')
+    if (expectedRole.current && p.role !== expectedRole.current) return reject(wrongAccountTypeMessage(p.role, expectedRole.current))
     setProfileState(p)
     setProfileFor(userIdValue)
     return p
   }, [])
 
-  /** Faculty / admin: e-mail + password. */
-  const signIn = useCallback(
-    async (email: string, password: string) => {
+  /** Student, faculty and admin: username + password. */
+  const signInWithUsername = useCallback(
+    async (username: string, password: string, expected?: Role) => {
       setAccountError(null)
-      const { user } = await auth.signInWithPassword(email, password)
-      return completeSignIn(user.id)
+      expectedRole.current = expected ?? null
+      signingIn.current = true
+      try {
+        const { user } = await auth.signInWithUsername(username, password)
+        return await completeSignIn(user.id)
+      } catch (err) {
+        // never leave a half-finished session behind (wrong account type, disabled account, profile lookup failed…)
+        await supabase.auth.signOut().catch(() => undefined)
+        throw err
+      } finally {
+        signingIn.current = false
+        expectedRole.current = null
+      }
     },
     [completeSignIn],
   )
 
-  /** Students: username + password. */
-  const signInWithUsername = useCallback(
-    async (username: string, password: string) => {
-      setAccountError(null)
-      const { user } = await auth.signInWithUsername(username, password)
-      return completeSignIn(user.id)
-    },
-    [completeSignIn],
-  )
+  const clearAccountError = useCallback(() => setAccountError(null), [])
 
   const signOut = useCallback(async () => {
     await auth.signOut()
@@ -161,15 +173,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       loading: !sessionReady || (userId !== undefined && profileFor !== userId),
       accountError,
-      recoveryMode,
-      signIn,
+      clearAccountError,
       signInWithUsername,
       signOut,
       refreshProfile,
       setProfile: setProfileState,
-      clearRecoveryMode: () => setRecoveryMode(false),
     }),
-    [session, profile, sessionReady, userId, profileFor, accountError, recoveryMode, signIn, signInWithUsername, signOut, refreshProfile],
+    [session, profile, sessionReady, userId, profileFor, accountError, clearAccountError, signInWithUsername, signOut, refreshProfile],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

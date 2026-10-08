@@ -1,142 +1,115 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
-import { LogIn } from 'lucide-react'
+import { Link, Navigate, useParams } from 'react-router-dom'
+import { GraduationCap, LogIn, ShieldCheck, UserCog, type LucideIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Alert, Button, PasswordField, TextField } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { cn } from '@/lib/utils'
 import { reportError } from '@/lib/errors'
-import { validateUsername } from '@/lib/identity'
+import { normalizeUsername } from '@/lib/identity'
 import type { Role } from '@/types'
 
-const LOGIN_PATH: Record<Role, string> = { student: '/login', faculty: '/faculty/login', admin: '/admin/login' }
+const ROLES: { role: Role; label: string; button: string; icon: LucideIcon }[] = [
+  { role: 'student', label: 'Student', button: 'Login', icon: GraduationCap },
+  { role: 'faculty', label: 'Faculty', button: 'Faculty Login', icon: ShieldCheck },
+  { role: 'admin', label: 'Admin', button: 'Admin Login', icon: UserCog },
+]
 
-const STAFF_COPY: Record<'faculty' | 'admin', { eyebrow: string; title: string; subtitle: string; emailLabel: string }> = {
-  faculty: {
-    eyebrow: 'Faculty sign in',
-    title: 'Verification Center',
-    subtitle: 'Sign in to review certificates and OD requests.',
-    emailLabel: 'College email',
-  },
-  admin: {
-    eyebrow: 'Administrator sign in',
-    title: 'Admin console',
-    subtitle: 'Restricted to authorised administrators.',
-    emailLabel: 'Admin email',
-  },
-}
+const isRole = (value: string | undefined): value is Role => ROLES.some((r) => r.role === value)
 
 /**
- * Students sign in with a username + password. Faculty and admins have their own pages and use their e-mail address.
- * On success <PublicOnly> sends the user to their own area (or back to where they came from) — the role always comes
- * from the database, never from which page was used.
+ * One sign-in page for every account type: pick Student, Faculty or Admin, then Username + Password.
+ * Only students see "Create Account" — faculty accounts are created by an administrator and the first administrator
+ * is set up on the server, so there is deliberately no public sign-up for either.
+ * On success <PublicOnly> sends the user to their own area (Passport / Verification Center / Admin Dashboard);
+ * the role always comes from the database, and an account used on the wrong tab is refused (see AuthContext).
  */
-export default function LoginPage({ audience }: { audience: Role }) {
-  return audience === 'student' ? <StudentLogin /> : <StaffLogin audience={audience} />
-}
-
-function StudentLogin() {
+export default function LoginPage() {
+  const { role: param } = useParams()
   useDocumentTitle('Sign in')
-  const { signInWithUsername, accountError } = useAuth()
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [usernameError, setUsernameError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    const problem = validateUsername(username)
-    // an address typed into the username box gets a precise hint instead of "incorrect password"
-    if (problem && /not an email|enter a username/i.test(problem)) return setUsernameError(problem)
-    setUsernameError(null)
-    setBusy(true)
-    try {
-      await signInWithUsername(username, password)
-    } catch (err) {
-      setError(reportError(err, 'signIn'))
-    } finally {
-      setBusy(false)
-    }
-  }
+  if (param !== undefined && !isRole(param)) return <Navigate to="/login" replace />
+  const role = isRole(param) ? param : null
 
   return (
     <AuthLayout
-      eyebrow="Student sign in"
       title="CertiPass"
-      subtitle="Your Digital Achievement Passport"
+      subtitle="Digital Achievement Passport"
       footer={
-        <div className="space-y-3">
+        role === 'student' ? (
           <p>
             Don't have an account?{' '}
             <Link to="/register" className="font-semibold text-ink-900 underline underline-offset-4">
               Create Account
             </Link>
           </p>
-          <p className="text-xs">
-            Faculty or admin?{' '}
-            <Link to="/faculty/login" className="underline underline-offset-2 hover:text-ink-900">
-              Faculty sign in
-            </Link>{' '}
-            ·{' '}
-            <Link to="/admin/login" className="underline underline-offset-2 hover:text-ink-900">
-              Admin sign in
-            </Link>
-          </p>
-        </div>
+        ) : undefined
       }
     >
-      <form onSubmit={onSubmit} className="space-y-5" noValidate>
-        {(error || accountError) && <Alert tone="error">{error ?? accountError}</Alert>}
-        <TextField
-          label="Username"
-          required
-          autoComplete="username"
-          autoCapitalize="none"
-          spellCheck={false}
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value)
-            setUsernameError(null)
-          }}
-          error={usernameError}
-        />
-        <PasswordField
-          label="Password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <Button type="submit" size="lg" className="w-full" loading={busy} icon={<LogIn className="size-4" aria-hidden />}>
-          Login
-        </Button>
-        <p className="text-center">
-          <Link to="/forgot-password" className="text-sm font-medium text-ink-600 underline underline-offset-4 hover:text-ink-900">
-            Forgot Password?
-          </Link>
-        </p>
-      </form>
+      <div className="space-y-7">
+        <RolePicker selected={role} />
+        {role && <CredentialsForm key={role} role={role} />}
+      </div>
     </AuthLayout>
   )
 }
 
-function StaffLogin({ audience }: { audience: 'faculty' | 'admin' }) {
-  const copy = STAFF_COPY[audience]
-  useDocumentTitle(copy.eyebrow)
-  const { signIn, accountError } = useAuth()
-  const [email, setEmail] = useState('')
+function RolePicker({ selected }: { selected: Role | null }) {
+  const { clearAccountError } = useAuth()
+  return (
+    <div>
+      <p id="account-type" className="text-center text-sm font-medium text-ink-600">
+        Choose your account type
+      </p>
+      <nav aria-labelledby="account-type" className="mt-3 grid grid-cols-3 gap-2">
+        {ROLES.map(({ role, label, icon: Icon }) => {
+          const active = role === selected
+          return (
+            <Link
+              key={role}
+              to={`/login/${role}`}
+              // a refusal belongs to the tab it happened on — don't carry it over to the next one
+              onClick={clearAccountError}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-sm font-semibold transition-colors',
+                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900',
+                active
+                  ? 'border-ink-900 bg-ink-900 text-white shadow-sm'
+                  : 'border-paper-300 bg-white text-ink-700 hover:border-ink-400 hover:bg-paper-100',
+              )}
+            >
+              <Icon className="size-5" aria-hidden />
+              {label}
+            </Link>
+          )
+        })}
+      </nav>
+    </div>
+  )
+}
+
+function CredentialsForm({ role }: { role: Role }) {
+  const { signInWithUsername, accountError } = useAuth()
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const label = ROLES.find((r) => r.role === role)!.button
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
+    const found = {
+      username: normalizeUsername(username) ? undefined : 'Enter your username.',
+      password: password ? undefined : 'Enter your password.',
+    }
+    setErrors(found)
+    if (found.username || found.password) return
     setBusy(true)
     try {
-      await signIn(email, password)
+      await signInWithUsername(username, password, role)
     } catch (err) {
       setError(reportError(err, 'signIn'))
     } finally {
@@ -144,57 +117,43 @@ function StaffLogin({ audience }: { audience: 'faculty' | 'admin' }) {
     }
   }
 
-  const other: Role = audience === 'faculty' ? 'admin' : 'faculty'
-
   return (
-    <AuthLayout
-      eyebrow={copy.eyebrow}
-      title={copy.title}
-      subtitle={copy.subtitle}
-      footer={
-        <p className="text-xs">
-          Other portals:{' '}
-          <Link to={LOGIN_PATH.student} className="underline underline-offset-2 hover:text-ink-900">
-            Student sign in
-          </Link>{' '}
-          ·{' '}
-          <Link to={LOGIN_PATH[other]} className="underline underline-offset-2 hover:text-ink-900">
-            {other === 'admin' ? 'Admin' : 'Faculty'} sign in
+    <form onSubmit={onSubmit} className="space-y-5" noValidate aria-label={`${ROLES.find((r) => r.role === role)!.label} sign in`}>
+      {(error || accountError) && <Alert tone="error">{error ?? accountError}</Alert>}
+      <TextField
+        label="Username"
+        required
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        value={username}
+        onChange={(e) => {
+          setUsername(e.target.value)
+          setErrors((cur) => ({ ...cur, username: undefined }))
+        }}
+        error={errors.username}
+      />
+      <PasswordField
+        label="Password"
+        autoComplete="current-password"
+        required
+        value={password}
+        onChange={(e) => {
+          setPassword(e.target.value)
+          setErrors((cur) => ({ ...cur, password: undefined }))
+        }}
+        error={errors.password}
+      />
+      <Button type="submit" size="lg" className="w-full" loading={busy} icon={<LogIn className="size-4" aria-hidden />}>
+        {label}
+      </Button>
+      {role === 'student' && (
+        <p className="text-center">
+          <Link to="/forgot-password" className="text-sm font-medium text-ink-600 underline underline-offset-4 hover:text-ink-900">
+            Forgot Password?
           </Link>
         </p>
-      }
-    >
-      <form onSubmit={onSubmit} className="space-y-5">
-        {(error || accountError) && <Alert tone="error">{error ?? accountError}</Alert>}
-        <TextField
-          label={copy.emailLabel}
-          type="email"
-          autoComplete="username"
-          inputMode="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@college.edu"
-        />
-        <PasswordField
-          label="Password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <div className="flex justify-end">
-          <Link
-            to={`/forgot-password?from=${audience}`}
-            className="text-sm font-medium text-ink-600 underline underline-offset-4 hover:text-ink-900"
-          >
-            Forgot password?
-          </Link>
-        </div>
-        <Button type="submit" size="lg" className="w-full" loading={busy} icon={<LogIn className="size-4" aria-hidden />}>
-          Sign in
-        </Button>
-      </form>
-    </AuthLayout>
+      )}
+    </form>
   )
 }

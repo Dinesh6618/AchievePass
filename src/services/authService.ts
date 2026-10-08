@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase'
-import { env } from '@/lib/env'
 import { AppError } from '@/lib/errors'
 import { normalizeUsername, usernameToAuthEmail } from '@/lib/identity'
 import type { PublicSettings } from '@/types'
@@ -15,26 +14,20 @@ export interface StudentSignUpInput {
   section: string
 }
 
-/** Faculty and admins sign in with their real e-mail address. */
-export async function signInWithPassword(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-  if (error) throw error
-  return data
-}
-
 /**
- * Students sign in with a username. Supabase Auth only understands e-mail-shaped identities, so the username is
- * mapped to an internal address (see lib/identity.ts) that the student never sees or types.
+ * Everyone — student, faculty and admin — signs in with a username. Supabase Auth only understands e-mail-shaped
+ * identities, so the username is mapped to an internal address (see lib/identity.ts) that nobody sees or types.
+ * Which area the account may use comes from its role in the database, never from the form that was used.
  */
 export async function signInWithUsername(username: string, password: string) {
-  try {
-    return await signInWithPassword(usernameToAuthEmail(username), password)
-  } catch (err) {
-    if (/invalid login credentials/i.test((err as { message?: string })?.message ?? '')) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email: usernameToAuthEmail(username), password })
+  if (error) {
+    if (/invalid login credentials/i.test(error.message ?? '')) {
       throw new AppError('Incorrect username or password.', 'invalid_credentials')
     }
-    throw err
+    throw error
   }
+  return data
 }
 
 const REGISTRATION_NOT_READY =
@@ -78,14 +71,7 @@ export async function signOut() {
   if (error) throw error
 }
 
-/** Faculty / admin password reset by e-mail. Students have no e-mail address on file (recovery is not available yet). */
-export async function sendPasswordReset(email: string) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: `${env.appUrl}/reset-password`,
-  })
-  if (error) throw error
-}
-
+/** Changing your own password while signed in. (Forgotten passwords are reset by an administrator.) */
 export async function updatePassword(newPassword: string) {
   const { error } = await supabase.auth.updateUser({ password: newPassword })
   if (error) throw error

@@ -74,7 +74,7 @@ export function toUserMessage(err: unknown, fallback = 'Something went wrong. Pl
   if (e.status === 429 || /rate limit|over_request_rate_limit|over_email_send_rate_limit/i.test(`${e.code ?? ''} ${e2.error_code ?? ''} ${message}`)) {
     return 'Too many attempts. Please wait a minute and try again.'
   }
-  // Only reachable by staff password-reset e-mails (students never receive e-mail): the mail server refused the message.
+  // CertiPass sends no e-mail, so this only appears when the project still has "Confirm email" switched on.
   if (/error sending (confirmation|recovery|magic link|invite|email)|smtp|unable to send|failed to send|email address not authorized|email_address_not_authorized/i.test(message)) {
     return "We couldn't send that email. The email service isn't set up for this project yet — please tell your administrator."
   }

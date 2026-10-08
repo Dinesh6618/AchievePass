@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Checks that student sign-up / sign-in (username + password, no e-mail verification) can work on YOUR
- * Supabase project, using only the public URL + anon/publishable key from .env.local.
+ * Checks that sign-up / sign-in (username + password for students, faculty and admins; no e-mail verification)
+ * can work on YOUR Supabase project, using only the public URL + anon/publishable key from .env.local.
  *
  *   npm run check-auth
  *
  * The one project setting CertiPass depends on: Authentication → Providers → Email → "Confirm email" must be OFF.
- * Students have no real e-mail address, so a confirmation message could never be delivered.
+ * Nobody has a real e-mail address on file, so a confirmation message could never be delivered.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
@@ -43,7 +43,7 @@ try {
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const s = await res.json()
   s.external?.email === false
-    ? bad('E-mail/password sign-in is turned OFF.', 'Authentication → Providers → Email → enable it (students sign in with a username, which uses this provider).')
+    ? bad('E-mail/password sign-in is turned OFF.', 'Authentication → Providers → Email → enable it (usernames use this provider).')
     : ok('Password sign-in is enabled')
   s.mailer_autoconfirm === true
     ? ok('"Confirm email" is OFF — new students are signed in immediately, with no e-mail step')
@@ -57,8 +57,18 @@ try {
 const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
 const check = await supabase.rpc('username_available', { p_username: 'a-name-nobody-has-0123' })
 check.error
-  ? bad(`The database does not support usernames yet (${check.error.message})`, 'Run supabase/migrations/20260101000006_username_auth.sql in the SQL Editor.')
+  ? bad(`The database does not support usernames yet (${check.error.message})`, 'Run supabase/migrations/20260101000006_username_auth.sql and then 20260101000007_role_logins.sql in the SQL Editor.')
   : ok('Database supports username sign-in')
 
-console.log(problems ? `\n✗ ${problems} problem(s) found.\n` : '\n✓ Ready: students can create an account with a username and password.\n')
+// Faculty accounts are created by an administrator through the admin-create-user edge function.
+try {
+  const res = await fetch(`${url}/functions/v1/admin-create-user`, { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: '{}' })
+  res.status === 404
+    ? bad('The admin-create-user function is not deployed — admins will not be able to add faculty.', 'Run: supabase functions deploy admin-create-user')
+    : ok('The admin-create-user function is deployed (admins can add faculty)')
+} catch {
+  console.log('  • Could not reach the edge function to check it (skipped).')
+}
+
+console.log(problems ? `\n✗ ${problems} problem(s) found.\n` : '\n✓ Ready: students can create an account, and faculty / admins sign in with a username and password.\n')
 process.exit(problems ? 1 : 0)

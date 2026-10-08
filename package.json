@@ -12,6 +12,7 @@
     "test": "vitest run",
     "seed": "node scripts/seed.mjs",
     "create-admin": "node scripts/seed.mjs --admin-only",
+    "convert-staff": "node scripts/convert-staff.mjs",
     "check-auth": "node scripts/check-auth.mjs",
     "build-sql": "node scripts/bundle-sql.mjs",
     "check-db": "node scripts/check-db.mjs"

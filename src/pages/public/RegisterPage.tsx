@@ -122,11 +122,11 @@ export default function RegisterPage() {
       wide
       eyebrow="Student registration"
       title="Create Account"
-      subtitle="Choose a username and password, then tell us about yourself."
+      subtitle="Create your student account — you'll be signed in straight away."
       footer={
         <p>
           Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-ink-900 underline underline-offset-4">
+          <Link to="/login/student" className="font-semibold text-ink-900 underline underline-offset-4">
             Login
           </Link>
         </p>
@@ -140,6 +140,8 @@ export default function RegisterPage() {
         <form onSubmit={onSubmit} className="space-y-5" noValidate>
           {formError && <Alert tone="error">{formError}</Alert>}
           {departments.error && <Alert tone="error">{departments.error}</Alert>}
+
+          <TextField label="Full Name" required autoComplete="name" value={form.fullName} onChange={set('fullName')} error={errors.fullName} />
 
           <TextField
             label="Username"
@@ -177,8 +179,6 @@ export default function RegisterPage() {
               error={errors.confirm}
             />
           </div>
-
-          <TextField label="Full Name" required autoComplete="name" value={form.fullName} onChange={set('fullName')} error={errors.fullName} />
 
           <div className="grid gap-5 sm:grid-cols-2">
             <TextField

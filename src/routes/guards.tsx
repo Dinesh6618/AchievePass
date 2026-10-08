@@ -22,17 +22,15 @@ export function FullPageLoader({ label = 'Opening your passport…' }: { label?:
  * come back afterwards; signed-in users on the wrong area are sent to their own home.
  */
 export function RequireRole({ role, children }: { role: Role; children?: ReactNode }) {
-  const { session, profile, loading, recoveryMode } = useAuth()
+  const { session, profile, loading } = useAuth()
   const location = useLocation()
 
   if (loading) return <FullPageLoader />
 
   if (!session || !profile) {
-    const loginPath = role === 'student' ? '/login' : `/${role}/login`
-    return <Navigate to={loginPath} replace state={{ from: location.pathname + location.search }} />
+    return <Navigate to={`/login/${role}`} replace state={{ from: location.pathname + location.search }} />
   }
 
-  if (recoveryMode) return <Navigate to="/reset-password" replace />
   if (profile.role !== role) return <Navigate to={homePathFor(profile.role)} replace />
 
   return children ?? <Outlet />

@@ -149,11 +149,7 @@ export default function ProfilePage() {
           >
             <div className="grid gap-5 sm:grid-cols-2">
               <TextField wrapperClassName="sm:col-span-2" label="Full name" required value={fullName} onChange={(e) => setFullName(e.target.value)} error={errors.fullName} />
-              {isStudent ? (
-                <TextField label="Username" value={profile.username ?? ''} readOnly hint="This is how you sign in. Contact your administrator to change it." />
-              ) : (
-                <TextField label="College email" value={profile.email ?? ''} readOnly hint="Contact your administrator to change this." />
-              )}
+              <TextField label="Username" value={profile.username} readOnly hint="This is how you sign in. Contact your administrator to change it." />
               <TextField label="Phone number" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} error={errors.phone} />
 
               {isStudent && (

@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { SidebarShell } from '@/components/layout/SidebarShell'
 import { TopNavShell } from '@/components/layout/TopNavShell'
 import { PublicOnly, RequireRole } from '@/routes/guards'
@@ -7,7 +7,7 @@ import { PublicOnly, RequireRole } from '@/routes/guards'
 import LandingPage from '@/pages/public/LandingPage'
 import LoginPage from '@/pages/public/LoginPage'
 import RegisterPage from '@/pages/public/RegisterPage'
-import { ForgotPasswordPage, ResetPasswordPage } from '@/pages/public/PasswordPages'
+import { ForgotPasswordPage } from '@/pages/public/PasswordPages'
 import VerifyPage, { VerifyLookupPage } from '@/pages/public/VerifyPage'
 import NotFoundPage from '@/pages/public/NotFoundPage'
 
@@ -43,12 +43,13 @@ export default function App() {
     <Routes>
       {/* ---------- public ---------- */}
       <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<PublicOnly><LoginPage audience="student" /></PublicOnly>} />
-      <Route path="/faculty/login" element={<PublicOnly><LoginPage audience="faculty" /></PublicOnly>} />
-      <Route path="/admin/login" element={<PublicOnly><LoginPage audience="admin" /></PublicOnly>} />
+      {/* one sign-in page: pick Student / Faculty / Admin, then Username + Password */}
+      <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
+      <Route path="/login/:role" element={<PublicOnly><LoginPage /></PublicOnly>} />
+      <Route path="/faculty/login" element={<Navigate to="/login/faculty" replace />} />
+      <Route path="/admin/login" element={<Navigate to="/login/admin" replace />} />
       <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify" element={<VerifyLookupPage />} />
       <Route path="/verify/:code" element={<VerifyPage />} />
 

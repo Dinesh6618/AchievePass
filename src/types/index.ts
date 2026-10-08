@@ -32,8 +32,9 @@ export interface Profile {
   id: string
   role: Role
   full_name: string
-  /** Students sign in with `username`; their internal login address is never exposed. Staff have a real e-mail. */
-  username: string | null
+  /** Everyone signs in with `username`; the internal login address derived from it is never exposed. */
+  username: string
+  /** Only accounts created before usernames existed keep a real e-mail here; new accounts have none. */
   email: string | null
   register_number: string | null
   faculty_id: string | null

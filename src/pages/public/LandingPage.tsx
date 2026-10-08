@@ -76,8 +76,8 @@ export default function LandingPage() {
               <LinkButton to="/register" size="lg" icon={<GraduationCap className="size-5" aria-hidden />}>
                 Start my passport
               </LinkButton>
-              <LinkButton to="/faculty/login" size="lg" variant="secondary" icon={<ShieldCheck className="size-5" aria-hidden />}>
-                Faculty sign in
+              <LinkButton to="/login" size="lg" variant="secondary" icon={<ShieldCheck className="size-5" aria-hidden />}>
+                Sign in
               </LinkButton>
             </div>
           </div>
@@ -155,21 +155,21 @@ export default function LandingPage() {
                 icon: GraduationCap,
                 role: 'Students',
                 text: 'A personal timeline of every hackathon, workshop and internship — with OD requests tracked alongside.',
-                to: '/login',
+                to: '/login/student',
                 cta: 'Student sign in',
               },
               {
                 icon: ShieldCheck,
                 role: 'Faculty',
                 text: 'A focused verification queue: read the certificate, tick the checklist, verify or send it back with a reason.',
-                to: '/faculty/login',
+                to: '/login/faculty',
                 cta: 'Faculty sign in',
               },
               {
                 icon: Award,
                 role: 'Administrators',
                 text: 'Department-wide analytics, participation reports with CSV export, and full control of users and categories.',
-                to: '/admin/login',
+                to: '/login/admin',
                 cta: 'Admin sign in',
               },
             ].map((r) => (

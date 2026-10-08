@@ -14,17 +14,14 @@ major_version = 17
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-# Only used by the password-reset link that faculty / admins can request.
-additional_redirect_urls = [
-  "http://localhost:5173/reset-password",
-  "http://127.0.0.1:5173/reset-password",
-]
+# No e-mail links anywhere (everyone signs in with a username), so no redirect URLs are needed.
+additional_redirect_urls = []
 enable_signup = true
 
 [auth.email]
 enable_signup = true
-# CertiPass has NO e-mail verification: students sign in with a username (their Auth identity is an internal,
-# never-delivered address), so a confirmation message could not be received. Keep this off.
+# CertiPass has NO e-mail verification: students, faculty and admins all sign in with a username (their Auth identity
+# is an internal, never-delivered address), so a confirmation message could not be received. Keep this off.
 enable_confirmations = false
 
 [storage]

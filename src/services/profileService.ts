@@ -80,7 +80,7 @@ export async function listFaculty(filters: { search?: string; departmentId?: str
     .eq('role', 'faculty' satisfies Role)
     .order('full_name')
   const term = sanitizeSearchTerm(filters.search ?? '')
-  if (term) q = q.or(`full_name.ilike.%${term}%,faculty_id.ilike.%${term}%,email.ilike.%${term}%`)
+  if (term) q = q.or(`full_name.ilike.%${term}%,faculty_id.ilike.%${term}%,username.ilike.%${term}%`)
   if (filters.departmentId) q = q.eq('department_id', filters.departmentId)
   return unwrap(await q) as Profile[]
 }
@@ -102,27 +102,27 @@ export async function adminUpdateProfile(userId: string, patch: AdminProfilePatc
 }
 
 export interface NewAccountInput {
-  role: Role
-  /** staff only — students have no e-mail, they get a username */
-  email?: string
-  /** students only */
-  username?: string
+  /** Administrators can create students and faculty only — there is no way to create an admin from the app. */
+  role: 'student' | 'faculty'
+  username: string
   password: string
   fullName: string
-  departmentId?: string
+  departmentId: string
+  /** students */
   registerNumber?: string
   year?: number
   section?: string
+  /** faculty */
   facultyId?: string
   designation?: string
 }
 
 /**
- * Account creation needs the service role key, which must never reach the browser, so it
- * runs in the `admin-create-user` edge function (which re-checks that the caller is an admin).
+ * Account creation, password resets and faculty deletion need the service role key, which must never reach the
+ * browser, so they run in the `admin-create-user` edge function (which re-checks that the caller is an active admin).
  */
-export async function adminCreateAccount(input: NewAccountInput): Promise<{ id: string }> {
-  const { data, error } = await supabase.functions.invoke('admin-create-user', { body: input })
+async function callAccountFunction<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('admin-create-user', { body })
   if (error) {
     // Edge function errors carry a JSON body with a user-facing message.
     const context = (error as { context?: Response }).context
@@ -137,5 +137,19 @@ export async function adminCreateAccount(input: NewAccountInput): Promise<{ id: 
     if (message) throw new AppError(message)
     throw error
   }
-  return data as { id: string }
+  return data as T
+}
+
+export function adminCreateAccount(input: NewAccountInput): Promise<{ id: string }> {
+  return callAccountFunction({ action: 'create', ...input })
+}
+
+/** Sets a new password for a student or faculty account (administrator accounts can't be changed this way). */
+export async function adminSetPassword(userId: string, password: string): Promise<void> {
+  await callAccountFunction({ action: 'set-password', userId, password })
+}
+
+/** Permanently deletes a faculty account. Refused when the account has review history — disable it instead. */
+export async function adminDeleteFaculty(userId: string): Promise<void> {
+  await callAccountFunction({ action: 'delete', userId })
 }

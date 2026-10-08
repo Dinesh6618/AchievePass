@@ -10,8 +10,8 @@ export const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      // Needed for the password-reset link sent to faculty / admins (it returns with a session in the URL).
-      detectSessionInUrl: true,
+      // CertiPass sends no e-mail links, so a session is never read from the address bar.
+      detectSessionInUrl: false,
     },
   },
 )

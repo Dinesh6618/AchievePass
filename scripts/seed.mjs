@@ -2,8 +2,9 @@
 /**
  * CertiPass seed / bootstrap script. Runs on YOUR machine with the service-role key — never in the browser.
  *
- *   npm run create-admin -- --email you@college.edu --password 'Str0ngPass' --name 'Your Name'
- *       Creates the first administrator (public sign-up can never create one).
+ *   npm run create-admin -- --username admin --password 'Str0ngPass1' --name 'Your Name'
+ *       Creates the first administrator (public sign-up can never create one). Everyone signs in with a username.
+ *       Add --reset to set a new password for an administrator that already exists (forgotten password).
  *
  *   npm run seed
  *       Creates realistic sample data for development: faculty, students, achievements in every
@@ -53,8 +54,11 @@ const fail = (context, error) => {
 
 // ---------------------------------------------------------------------------------------- helpers
 const SAMPLE_PASSWORD = process.env.SEED_PASSWORD || 'CertiPass#2026'
-const SAMPLE_DOMAIN = 'demo.certipass.test' // faculty only — students have usernames
 const INTERNAL_EMAIL_DOMAIN = 'certipass.invalid' // must match src/lib/identity.ts
+// must match src/lib/identity.ts (a test keeps the two in step)
+const USERNAME_PATTERN = /^(?=.{3,100}$)(?!.*\.\.)[a-z0-9]([a-z0-9._-]*[a-z0-9])?(@[a-z0-9]([a-z0-9._-]*[a-z0-9])?)?$/
+/** Everyone signs in with a username; the Supabase Auth identity is derived from it (never shown anywhere). */
+const authEmailFor = (username) => `${username.replace('@', '+')}@${INTERNAL_EMAIL_DOMAIN}`
 
 async function findUserByEmail(email) {
   // listUsers is paginated; sample sets are small, so scan a few pages.
@@ -68,35 +72,48 @@ async function findUserByEmail(email) {
   return null
 }
 
-async function ensureUser({ email, password, role, meta }) {
+async function ensureUser({ username, password, role, meta }) {
+  const email = authEmailFor(username)
   const existing = await findUserByEmail(email)
   if (existing) return { id: existing.id, created: false }
   const { data, error } = await db.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: meta,
+    user_metadata: { ...meta, username },
     app_metadata: { role, provisioned: 'true' },
   })
-  if (error) fail(`creating ${role} ${email} (is student_email_domain set in Settings? clear it for seeding)`, error)
+  if (error) fail(`creating ${role} "${username}" (has migration 20260101000007_role_logins.sql been run?)`, error)
   return { id: data.user.id, created: true }
 }
 
 // ---------------------------------------------------------------------------------------- admin only
 async function createAdmin() {
-  const email = option('email') || process.env.ADMIN_EMAIL
+  const username = (option('username') || process.env.ADMIN_USERNAME || '').trim().toLowerCase()
   const password = option('password') || process.env.ADMIN_PASSWORD
   const name = option('name') || process.env.ADMIN_NAME || 'Administrator'
-  if (!email || !password) {
-    console.error('Usage: npm run create-admin -- --email you@college.edu --password "Str0ngPass1" --name "Your Name"')
+  if (!username || !password) {
+    console.error('Usage: npm run create-admin -- --username admin --password "Str0ngPass1" --name "Your Name"')
+    process.exit(1)
+  }
+  if (!USERNAME_PATTERN.test(username)) {
+    console.error('The username must be 3-100 characters: letters, numbers, dots, dashes, underscores and at most one @.')
     process.exit(1)
   }
   if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
     console.error('The password needs 8+ characters with a letter and a number.')
     process.exit(1)
   }
-  const { id, created } = await ensureUser({ email, password, role: 'admin', meta: { full_name: name } })
-  console.log(created ? `✓ Administrator created: ${email}` : `• ${email} already exists (password unchanged)`)
+  const { id, created } = await ensureUser({ username, password, role: 'admin', meta: { full_name: name } })
+  if (created) {
+    console.log(`✓ Administrator created — sign in at /login/admin with username "${username}"`)
+  } else if (flag('reset')) {
+    const { error } = await db.auth.admin.updateUserById(id, { password })
+    if (error) fail('resetting the password', error)
+    console.log(`✓ New password set for administrator "${username}"`)
+  } else {
+    console.log(`• "${username}" already exists (password unchanged — add --reset to set a new one)`)
+  }
   return id
 }
 
@@ -171,8 +188,8 @@ function verificationCode(taken) {
 }
 
 async function seedSample() {
-  const adminEmail = option('email') || process.env.ADMIN_EMAIL
-  if (adminEmail && (option('password') || process.env.ADMIN_PASSWORD)) await createAdmin()
+  const adminUsername = option('username') || process.env.ADMIN_USERNAME
+  if (adminUsername && (option('password') || process.env.ADMIN_PASSWORD)) await createAdmin()
 
   const { data: departments, error: dErr } = await db.from('departments').select('id, code')
   if (dErr) fail('reading departments — did you run the migrations?', dErr)
@@ -184,15 +201,15 @@ async function seedSample() {
   console.log('Creating faculty…')
   const faculty = {}
   for (const f of FACULTY) {
-    const email = `${f.dept.toLowerCase()}.faculty@${SAMPLE_DOMAIN}`
+    const username = `${f.dept.toLowerCase()}.faculty`
     const { id, created } = await ensureUser({
-      email,
+      username,
       password: SAMPLE_PASSWORD,
       role: 'faculty',
       meta: { full_name: f.name, faculty_id: f.id, designation: f.title, department_id: deptId[f.dept] },
     })
     faculty[f.dept] = id
-    console.log(`  ${created ? '✓' : '•'} ${email}`)
+    console.log(`  ${created ? '✓' : '•'} ${username}`)
   }
 
   console.log('Creating students…')
@@ -201,10 +218,10 @@ async function seedSample() {
     // Students sign in with a username; the Supabase Auth identity is derived from it (see src/lib/identity.ts).
     const username = s.username
     const { id, created } = await ensureUser({
-      email: `${username.replace('@', '+')}@${INTERNAL_EMAIL_DOMAIN}`,
+      username,
       password: SAMPLE_PASSWORD,
       role: 'student',
-      meta: { username, full_name: s.name, register_number: s.reg, department_id: deptId[s.dept], year: s.year, section: s.section },
+      meta: { full_name: s.name, register_number: s.reg, department_id: deptId[s.dept], year: s.year, section: s.section },
     })
     students.push({ ...s, id })
     console.log(`  ${created ? '✓' : '•'} ${username}`)
@@ -316,8 +333,8 @@ async function seedSample() {
   console.log('\nSample sign-ins (development only):')
   console.log(`  password for every sample account: ${SAMPLE_PASSWORD}`)
   console.log(`  student : username ${STUDENTS[0].username}`)
-  console.log(`  faculty : cse.faculty@${SAMPLE_DOMAIN}`)
-  if (adminEmail) console.log(`  admin   : ${adminEmail}`)
+  console.log('  faculty : username cse.faculty')
+  if (adminUsername) console.log(`  admin   : username ${adminUsername}`)
 }
 
 // ---------------------------------------------------------------------------------------- run

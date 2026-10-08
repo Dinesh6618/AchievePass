@@ -10,32 +10,39 @@ import { INTERNAL_EMAIL_DOMAIN, RESERVED_USERNAMES, USERNAME_PATTERN, usernameTo
 const root = join(__dirname, '..', '..')
 const read = (...p: string[]) => readFileSync(join(root, ...p), 'utf8')
 
-const sql = read('supabase', 'migrations', '20260101000006_username_auth.sql')
+const usernameSql = read('supabase', 'migrations', '20260101000006_username_auth.sql')
+// migration 7 holds the final sign-up trigger (all three roles); the constraint comes from migration 6
+const triggerSql = read('supabase', 'migrations', '20260101000007_role_logins.sql')
+const sql = usernameSql + '\n' + triggerSql
 const edgeFunction = read('supabase', 'functions', 'admin-create-user', 'index.ts')
 
 describe('username rules are identical everywhere', () => {
   it('uses the same internal login domain in the app, the database trigger and the edge function', () => {
-    expect(sql).toContain(`v_internal_domain constant text := '${INTERNAL_EMAIL_DOMAIN}'`)
+    expect(triggerSql).toContain(`v_internal_domain constant text := '${INTERNAL_EMAIL_DOMAIN}'`)
+    expect(read('scripts', 'seed.mjs')).toContain(`INTERNAL_EMAIL_DOMAIN = '${INTERNAL_EMAIL_DOMAIN}'`)
+    expect(read('scripts', 'convert-staff.mjs')).toContain(`INTERNAL_EMAIL_DOMAIN = '${INTERNAL_EMAIL_DOMAIN}'`)
     expect(edgeFunction).toContain(`INTERNAL_EMAIL_DOMAIN = '${INTERNAL_EMAIL_DOMAIN}'`)
   })
 
   it('builds the login address the same way: "@" in a username becomes "+"', () => {
     expect(usernameToAuthEmail('Name@College.edu')).toBe('name+college.edu@certipass.invalid')
-    expect(sql).toContain(`replace(v_username, '@', '+') || '@' || v_internal_domain`)
+    expect(triggerSql).toContain(`replace(v_username, '@', '+') || '@' || v_internal_domain`)
     expect(edgeFunction).toContain(`username.replace('@', '+')`)
     expect(read('scripts', 'seed.mjs')).toContain(`username.replace('@', '+')`)
   })
 
   it('reserves the same names in the database as in the app', () => {
-    const block = /is_reserved_username[\s\S]*?in \(([\s\S]*?)\)/.exec(sql)?.[1] ?? ''
+    const block = /is_reserved_username[\s\S]*?in \(([\s\S]*?)\)/.exec(usernameSql)?.[1] ?? ''
     const inSql = [...block.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).sort()
     expect(inSql).toEqual([...RESERVED_USERNAMES].sort())
   })
 
   it('uses the same username pattern in SQL and TypeScript, and in the edge function', () => {
     const pattern = USERNAME_PATTERN.source
-    expect(sql).toContain(`'${pattern}'`)
+    expect(usernameSql).toContain(`'${pattern}'`) // the table constraint
+    expect(triggerSql).toContain(`'${pattern}'`) // the sign-up trigger
     expect(edgeFunction).toContain(pattern)
+    expect(read('scripts', 'seed.mjs')).toContain(pattern)
   })
 
   it('does not leave the old e-mail-verification pieces behind', () => {

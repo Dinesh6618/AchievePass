@@ -60,6 +60,11 @@ function createStudent(key: string, username: string, meta: Record<string, unkno
   return createUser(key, authEmail(username.toLowerCase().trim()), { username, ...meta })
 }
 
+/** Faculty / admin accounts exist only when created with the service role (role in app_metadata) — usernames, no e-mail. */
+function createStaff(key: string, username: string, role: 'faculty' | 'admin', meta: Record<string, unknown> = {}) {
+  return createUser(key, authEmail(username), { username, ...meta }, { role, provisioned: 'true' })
+}
+
 beforeAll(async () => {
   db = new PGlite()
   await db.exec(BOOTSTRAP)
@@ -85,14 +90,9 @@ beforeAll(async () => {
   await createStudent('carol', 'carol2021', {
     full_name: 'Carol Das', register_number: '2021ECE001', department_id: ids.ece, year: 2,
   })
-  await createUser('fac_cse', 'fac.cse@college.edu',
-    { full_name: 'Dr. Meena', faculty_id: 'f001', department_id: ids.cse, designation: 'Professor' },
-    { role: 'faculty', provisioned: 'true' })
-  await createUser('fac_ece', 'fac.ece@college.edu',
-    { full_name: 'Dr. Ravi', faculty_id: 'f002', department_id: ids.ece },
-    { role: 'faculty', provisioned: 'true' })
-  await createUser('admin', 'admin@college.edu', { full_name: 'Site Admin' },
-    { role: 'admin', provisioned: 'true' })
+  await createStaff('fac_cse', 'dr.meena', 'faculty', { full_name: 'Dr. Meena', faculty_id: 'f001', department_id: ids.cse, designation: 'Professor' })
+  await createStaff('fac_ece', 'dr.ravi', 'faculty', { full_name: 'Dr. Ravi', faculty_id: 'f002', department_id: ids.ece })
+  await createStaff('admin', 'admin', 'admin', { full_name: 'Site Admin' })
 })
 
 afterAll(async () => {
@@ -116,14 +116,41 @@ describe('signup (username + password)', () => {
     expect(Object.keys(view)).not.toContain('email')
   })
 
-  it('only honours the role from app metadata (service role); staff keep their real e-mail', async () => {
-    const [f] = await rows(`select role, faculty_id, email from profiles where id = $1`, [ids.fac_cse])
+  it('only honours the role from app metadata (service role); faculty and admins sign in with a username too', async () => {
+    const [f] = await rows(`select role, faculty_id, username, email from profiles where id = $1`, [ids.fac_cse])
     expect(f.role).toBe('faculty')
     expect(f.faculty_id).toBe('F001')
-    expect(f.email).toBe('fac.cse@college.edu')
-    const [a] = await rows(`select role, department_id from profiles where id = $1`, [ids.admin])
+    expect(f.username).toBe('dr.meena')
+    expect(f.email).toBeNull()
+    const [a] = await rows(`select role, username, department_id, email from profiles where id = $1`, [ids.admin])
     expect(a.role).toBe('admin')
+    expect(a.username).toBe('admin') // the reserved name is for the first administrator only
+    expect(a.email).toBeNull()
     expect(a.department_id).toBeNull()
+  })
+
+  it('has no public way to become faculty or admin', async () => {
+    const meta = { full_name: 'Wannabe', department_id: ids.cse, faculty_id: 'FX1', register_number: 'WB1' }
+    // the role is read only from app_metadata; anything the browser sends in user metadata is ignored
+    await createStudent('wannabeFaculty', 'wannabe.faculty', { ...meta, register_number: 'WB1', role: 'faculty' })
+    await createStudent('wannabeAdmin', 'wannabe.admin', { ...meta, register_number: 'WB2', role: 'admin', user_role: 'admin' })
+    for (const key of ['wannabeFaculty', 'wannabeAdmin']) {
+      const [p] = await rows(`select role, faculty_id from profiles where id = $1`, [ids[key]])
+      expect(p.role).toBe('student')
+      expect(p.faculty_id).toBeNull()
+    }
+    // an app_metadata role without the provisioning flag from a public sign-up still lands on the username rules
+    await expectDenied(createUser('realStaff', 'new.teacher@college.edu', { username: 'new.teacher', full_name: 'T', department_id: ids.cse, faculty_id: 'F9' }, { role: 'faculty', provisioned: 'true' }))
+  })
+
+  it('applies the username rules to staff too, and keeps "admin" and friends reserved for everyone else', async () => {
+    const meta = { full_name: 'Staffer', department_id: ids.cse, faculty_id: 'FZ1' }
+    await expectDenied(createStaff('noName', '', 'faculty', meta))
+    await expectDenied(createStaff('badName', 'bad name', 'faculty', meta))
+    await expectDenied(createStaff('reservedFaculty', 'admin2', 'faculty', meta).then(() => createStaff('reservedFaculty2', 'staff', 'faculty', meta)))
+    await expectDenied(createStaff('dupStaff', 'DR.MEENA', 'faculty', { ...meta, faculty_id: 'FZ2' })) // usernames are unique across roles
+    await expectDenied(createStaff('studentTakesStaffName', 'dr.ravi', 'faculty', { ...meta, faculty_id: 'FZ3' }))
+    await expectDenied(createStudent('studentTakesAdmin', 'admin', { full_name: 'X', register_number: 'ADM1', department_id: ids.cse }))
   })
 
   it('makes usernames unique, ignoring case', async () => {

@@ -50,7 +50,7 @@ export const NAV: Record<Role, NavItem[]> = {
   admin: [
     { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/admin/students', label: 'Students', icon: GraduationCap },
-    { to: '/admin/faculty', label: 'Faculty', icon: Users },
+    { to: '/admin/faculty', label: 'Faculty Management', icon: Users },
     { to: '/admin/achievements', label: 'Achievements', icon: Award },
     { to: '/admin/od', label: 'OD Management', icon: ClipboardList },
     { to: '/admin/reports', label: 'Reports', icon: FileBarChart },

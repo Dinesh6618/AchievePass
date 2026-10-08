@@ -1,0 +1,34 @@
+# Supabase CLI configuration for local development (`supabase start`).
+# A hosted project does NOT read this file — mirror these settings in the dashboard (see README → Sign-in model).
+project_id = "certipass"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+# Only used by the password-reset link that faculty / admins can request.
+additional_redirect_urls = [
+  "http://localhost:5173/reset-password",
+  "http://127.0.0.1:5173/reset-password",
+]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# CertiPass has NO e-mail verification: students sign in with a username (their Auth identity is an internal,
+# never-delivered address), so a confirmation message could not be received. Keep this off.
+enable_confirmations = false
+
+[storage]
+enabled = true
+
+[functions.admin-create-user]
+verify_jwt = true

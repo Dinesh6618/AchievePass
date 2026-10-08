@@ -1,0 +1,42 @@
+{
+  "name": "certipass",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "CertiPass — Student Achievement Passport & OD Verification Platform",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "seed": "node scripts/seed.mjs",
+    "create-admin": "node scripts/seed.mjs --admin-only",
+    "check-auth": "node scripts/check-auth.mjs",
+    "build-sql": "node scripts/bundle-sql.mjs",
+    "check-db": "node scripts/check-db.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "lucide-react": "^1.52.0",
+    "pdfjs-dist": "^6.4.299",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1",
+    "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
+  }
+}
